@@ -1,27 +1,3 @@
-“””
-TOB/MBO 予兆検出システム v2.0
-EDINET 大量保有報告書・変更報告書の遅延・異常検出
-
-【2段階パイプライン】
-1次スクリーニング: EDINET APIメタデータ(periodEnd)で大まかに候補を絞る
-2次精査:          対象書類のXMLを取得し「報告義務発生日」を正確に抽出
-
-【和暦対応】
-明治・大正・昭和・平成・令和 → 西暦変換を内製実装
-
-使い方:
-python tob_detector.py –demo                          # デモ（ネットワーク不要）
-python tob_detector.py –date 2026-01-23               # 特定日を検査
-python tob_detector.py –range 2025-01-01 2026-04-01   # 期間スキャン
-python tob_detector.py –range 2025-01-01 2026-04-01 –code 8289  # 銘柄絞り込み
-python tob_detector.py –parse-test                    # 日付パース単体テスト
-
-出力:
-コンソール:      アラートサマリー
-tob_alerts.json: 全アラートの詳細
-tob_alerts.csv:  スプレッドシート用
-“””
-
 import os
 import requests
 import json
@@ -45,14 +21,10 @@ EDINET_API_KEY = os.environ.get(“EDINET_API_KEY”, “”)
 # ============================================================
 
 def get_jp_holidays(year: int) -> set:
-“””
-指定年の日本の祝日セットを返す。
-内閣府のルールに基づく計算（振替休日・国民の休日含む）。
-2020-2030年対応。
-“””
-holidays = set()
 
 ```
+holidays = set()
+
 def add(m, d):
     try:
         holidays.add(date(year, m, d))
@@ -108,37 +80,40 @@ return holidays | extra
 ```
 
 def _nth_weekday(year: int, month: int, weekday: int, n: int) -> int:
-“”“month の第n weekday の日付（weekday: 0=月曜）”””
+
+```
 d = date(year, month, 1)
 count = 0
 while True:
-if d.weekday() == weekday:
-count += 1
-if count == n:
-return d.day
-d += timedelta(days=1)
+    if d.weekday() == weekday:
+        count += 1
+        if count == n:
+            return d.day
+    d += timedelta(days=1)
+```
 
 def _shunbun(year: int) -> int:
-“”“春分の日（3月）”””
+
+```
 if year <= 1979: return int(20.8357 + 0.242194 * (year - 1980) - int((year - 1980) / 4))
 if year <= 2099: return int(20.8431 + 0.242194 * (year - 1980) - int((year - 1980) / 4))
 return 21
+```
 
 def _shubun(year: int) -> int:
-“”“秋分の日（9月）”””
+
+```
 if year <= 1979: return int(23.2588 + 0.242194 * (year - 1980) - int((year - 1980) / 4))
 if year <= 2099: return int(23.2488 + 0.242194 * (year - 1980) - int((year - 1980) / 4))
 return 23
+```
 
 def calc_business_days(start: date, end: date) -> int:
-“””
-start から end までの営業日数を計算（両端含む）。
-土日・日本の祝日を除外。
-“””
-if end < start:
-return 0
 
 ```
+if end < start:
+    return 0
+
 holidays = set()
 for y in range(start.year, end.year + 1):
     holidays |= get_jp_holidays(y)
@@ -161,49 +136,45 @@ return count
 LEGAL_LIMIT_BIZ_DAYS = 5  # 法定提出期限（営業日）
 
 def score_delay(biz_days_late: int) -> tuple[int, str]:
-“””
-遅延営業日数 → (スコア, 分類)
-“””
-if biz_days_late <= 0:
-return 0, “NORMAL”
-elif biz_days_late <= 5:
-return 1, “MINOR”       # 軽微（1週間以内）
-elif biz_days_late <= 22:
-return 2, “LOW”         # 1ヶ月以内
-elif biz_days_late <= 65:
-return 3, “MEDIUM”      # 3ヶ月以内
-elif biz_days_late <= 130:
-return 4, “HIGH”        # 6ヶ月以内
-else:
-return 5, “CRITICAL”    # 6ヶ月超（Olympic事例相当）
-
-def score_holding_ratio(ratio: float) -> tuple[int, str]:
-“””
-保有割合 → (スコア, 意味)
-重要な法的閾値を考慮。
-“””
-if ratio >= 33.34:
-return 5, “特別決議阻止ライン超（33.4%+）”
-elif ratio >= 30.0:
-return 4, “経営支配力（30%+）”
-elif ratio >= 20.0:
-return 3, “持分法適用ライン（20%+）”
-elif ratio >= 10.0:
-return 2, “大株主ライン（10%+）”
-elif ratio >= 5.0:
-return 1, “大量保有（5%+）”
-else:
-return 0, “5%未満”
-
-def score_purpose(purpose_text: str) -> tuple[int, str]:
-“””
-保有目的テキスト → (スコア, 検出内容)
-段階的な変化をキャッチする。
-“””
-if not purpose_text:
-return 0, “記載なし”
 
 ```
+if biz_days_late <= 0:
+    return 0, "NORMAL"
+elif biz_days_late <= 5:
+    return 1, "MINOR"       # 軽微（1週間以内）
+elif biz_days_late <= 22:
+    return 2, "LOW"         # 1ヶ月以内
+elif biz_days_late <= 65:
+    return 3, "MEDIUM"      # 3ヶ月以内
+elif biz_days_late <= 130:
+	return 4, "HIGH"        # 6ヶ月以内
+else:
+    return 5, "CRITICAL"    # 6ヶ月超（Olympic事例相当）
+```
+
+def score_holding_ratio(ratio: float) -> tuple[int, str]:
+
+```
+if ratio >= 33.34:
+    return 5, "特別決議阻止ライン超（33.4%+）"
+elif ratio >= 30.0:
+    return 4, "経営支配力（30%+）"
+elif ratio >= 20.0:
+    return 3, "持分法適用ライン（20%+）"
+elif ratio >= 10.0:
+    return 2, "大株主ライン（10%+）"
+elif ratio >= 5.0:
+    return 1, "大量保有（5%+）"
+else:
+    return 0, "5%未満"
+```
+
+def score_purpose(purpose_text: str) -> tuple[int, str]:
+
+```
+if not purpose_text:
+    return 0, "記載なし"
+
 t = purpose_text.lower()
 
 # 高リスクキーワード
@@ -227,14 +198,11 @@ return 1, "目的が曖昧（要精査）"
 ```
 
 def score_holder_type(holder_info: dict) -> tuple[int, str]:
-“””
-提出者属性 → (スコア, 属性分類)
-事業内容から創業家系・事業会社等を判定。
-“””
-biz = holder_info.get(“business”, “”)
-name = holder_info.get(“name”, “”)
 
 ```
+biz = holder_info.get("business", "")
+name = holder_info.get("name", "")
+
 # 創業家系の特徴的なキーワード
 founding_keywords = ["不動産", "資産管理", "投資管理", "持株", "ホールディング",
                      "財産管理", "有価証券投資"]
@@ -258,21 +226,21 @@ return 1, "属性不明（要確認）"
 ```
 
 def classify_total_score(score: int) -> dict:
-“””
-合計スコア → リスク判定
-“””
+
+```
 if score >= 10:
-return {“level”: “CRITICAL”, “label”: “🔴 即時精査推奨”,
-“comment”: “TOB/MBO/株式交換の強い予兆。複数シグナルが重複。”}
+    return {"level": "CRITICAL", "label": "🔴 即時精査推奨",
+            "comment": "TOB/MBO/株式交換の強い予兆。複数シグナルが重複。"}
 elif score >= 7:
-return {“level”: “HIGH”, “label”: “🟠 要注意”,
-“comment”: “水面下での交渉進行の可能性。業績・適時開示と突合を。”}
+    return {"level": "HIGH", "label": "🟠 要注意",
+            "comment": "水面下での交渉進行の可能性。業績・適時開示と突合を。"}
 elif score >= 4:
-return {“level”: “MEDIUM”, “label”: “🟡 継続監視”,
-“comment”: “単独では弱いが、他シグナルと組み合わせて追跡。”}
+    return {"level": "MEDIUM", "label": "🟡 継続監視",
+            "comment": "単独では弱いが、他シグナルと組み合わせて追跡。"}
 else:
-return {“level”: “LOW”, “label”: “⬜ 通常”,
-“comment”: “現時点では特段のシグナルなし。”}
+    return {"level": "LOW", "label": "⬜ 通常",
+            "comment": "現時点では特段のシグナルなし。"}
+```
 
 # ============================================================
 
@@ -297,17 +265,12 @@ WAREKI_ERAS = {
 }
 
 def wareki_to_seireki(era: str, year: int, month: int, day: int) -> Optional[date]:
-“””
-和暦 → 西暦に変換。
-era:  “令和” / “平成” / “昭和” / “大正” / “明治” またはアルファベット略称
-year: 元号年（1〜）
-例: wareki_to_seireki(“令和”, 7, 2, 28) → date(2025, 2, 28)
-“””
-era_start = WAREKI_ERAS.get(era)
-if era_start is None:
-return None
 
 ```
+era_start = WAREKI_ERAS.get(era)
+if era_start is None:
+    return None
+
 western_year = era_start.year + year - 1
 
 # 元号が変わった年（例: 令和元年=2019年）の月日検証
@@ -322,29 +285,8 @@ except ValueError:
 ```
 
 def parse_date_string(text: str) -> Optional[date]:
-“””
-任意の日付文字列 → date オブジェクト。
-以下のフォーマットを全て処理できる:
 
 ```
-西暦:
-  2025-02-28
-  2025/02/28
-  20250228
-
-和暦（漢字）:
-  令和7年2月28日
-  令和7年2月28日
-  平成30年12月1日
-
-和暦（アルファベット）:
-  R7.2.28
-  H30.12.1
-  R07.02.28
-
-EDINETのXBRL属性値:
-  contextRef="FilingDate" など付きの ISO 形式
-"""
 if not text:
     return None
 
@@ -404,24 +346,24 @@ return None
 ```
 
 def test_date_parser():
-“”“日付パーサーの単体テスト”””
-cases = [
-# (入力文字列, 期待する date)
-(“令和7年2月28日”,        date(2025, 2, 28)),
-(“令和元年5月1日”,         date(2019, 5, 1)),
-(“平成30年12月31日”,       date(2018, 12, 31)),
-(“昭和64年1月7日”,        date(1989, 1, 7)),
-(“R7.2.28”,               date(2025, 2, 28)),
-(“H30.12.1”,              date(2018, 12, 1)),
-(“2025-02-28”,            date(2025, 2, 28)),
-(“2025/02/28”,            date(2025, 2, 28)),
-(“20250228”,              date(2025, 2, 28)),
-# 実際のEDINET表紙テキストを想定
-(”【報告義務発生日】 令和7年2月28日”, date(2025, 2, 28)),
-(“報告義務発生日　令和8 1 23”,       None),   # スペース区切り（不完全）→ None
-]
 
 ```
+cases = [
+    # (入力文字列, 期待する date)
+    ("令和7年2月28日",        date(2025, 2, 28)),
+    ("令和元年5月1日",         date(2019, 5, 1)),
+    ("平成30年12月31日",       date(2018, 12, 31)),
+    ("昭和64年1月7日",        date(1989, 1, 7)),
+    ("R7.2.28",               date(2025, 2, 28)),
+    ("H30.12.1",              date(2018, 12, 1)),
+    ("2025-02-28",            date(2025, 2, 28)),
+    ("2025/02/28",            date(2025, 2, 28)),
+    ("20250228",              date(2025, 2, 28)),
+    # 実際のEDINET表紙テキストを想定
+    ("【報告義務発生日】 令和7年2月28日", date(2025, 2, 28)),
+    ("報告義務発生日　令和8 1 23",       None),   # スペース区切り（不完全）→ None
+]
+
 print("\n" + "=" * 60)
 print("  日付パーサー 単体テスト")
 print("=" * 60)
@@ -456,16 +398,13 @@ CHANGE_REPORT_CODES = {
 }
 
 def fetch_documents_by_date(target_date: str) -> list:
-“””
-指定日のEDINET提出書類一覧を取得。
-target_date: “YYYY-MM-DD”
-“””
-url = f”{EDINET_BASE}/documents.json”
-params = {“date”: target_date, “type”: 2}
-if EDINET_API_KEY:
-params[“Subscription-Key”] = EDINET_API_KEY
 
 ```
+url = f"{EDINET_BASE}/documents.json"
+params = {"date": target_date, "type": 2}
+if EDINET_API_KEY:
+    params["Subscription-Key"] = EDINET_API_KEY
+
 try:
     res = requests.get(url, params=params, timeout=15)
     res.raise_for_status()
@@ -480,37 +419,23 @@ except Exception as e:
 ```
 
 def fetch_xbrl_zip(doc_id: str) -> Optional[bytes]:
-“””
-書類のXBRL/CSVパッケージ（ZIPファイル）を取得。
-type=1: 提出書類ファイル一式
-“””
-url = f”{EDINET_BASE}/documents/{doc_id}”
-params = {“type”: 1}
-if EDINET_API_KEY:
-params[“Subscription-Key”] = EDINET_API_KEY
-try:
-res = requests.get(url, params=params, timeout=30)
-res.raise_for_status()
-return res.content
-except Exception:
-return None
-
-def extract_obligation_date_from_zip(zip_bytes: bytes) -> Optional[date]:
-“””
-EDINETのZIPパッケージから報告義務発生日を抽出する。
 
 ```
-ZIPの内部構造:
-  PublicDoc/
-    *.htm  ← 表紙HTML（人間が読む形式）
-    *.xbrl ← XBRLデータ（機械可読）
-    AuditDoc/ ...
+url = f"{EDINET_BASE}/documents/{doc_id}"
+params = {"type": 1}
+if EDINET_API_KEY:
+    params["Subscription-Key"] = EDINET_API_KEY
+try:
+    res = requests.get(url, params=params, timeout=30)
+    res.raise_for_status()
+    return res.content
+except Exception:
+    return None
+```
 
-抽出戦略（優先順）:
-  1. XBRLファイルから専用タグを探す（最も確実）
-  2. 表紙HTMファイルのテーブルから「報告義務発生日」行を探す
-  3. どのファイルでもフレーズ検索（フォールバック）
-"""
+def extract_obligation_date_from_zip(zip_bytes: bytes) -> Optional[date]:
+
+```
 try:
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         names = zf.namelist()
@@ -605,14 +530,8 @@ return None
 ```
 
 def get_obligation_date_precise(doc_id: str) -> tuple[Optional[date], str]:
-“””
-2次精査: ZIPをダウンロードして報告義務発生日を正確取得。
 
 ```
-Returns:
-    (date or None, source_description)
-    source: "xbrl" / "html" / "fallback" / "failed"
-"""
 zip_bytes = fetch_xbrl_zip(doc_id)
 if not zip_bytes:
     return None, "failed"
@@ -631,18 +550,8 @@ return None, "failed"
 # ============================================================
 
 def analyze_document(doc: dict, precise: bool = False) -> Optional[dict]:
-“””
-1件の書類を分析してアラート情報を生成。
 
 ```
-precise=False (1次スクリーニング):
-  periodEndを義務発生日の近似値として使用。高速。
-  → 遅延候補を大まかに絞り込む
-
-precise=True (2次精査):
-  ZIPをダウンロードして表紙から正確な義務発生日を取得。
-  → スコア確定・アラート出力に使用
-"""
 doc_type = doc.get("docTypeCode", "")
 if doc_type not in CHANGE_REPORT_CODES:
     return None
@@ -754,15 +663,8 @@ return {
 def scan_date_range(start_date: str, end_date: str,
 filter_sec_code: Optional[str] = None,
 precise_threshold: int = 10) -> list:
-“””
-2段階パイプラインで期間内の変更報告書をスキャン。
 
 ```
-Stage 1: APIメタデータで高速スクリーニング（periodEnd近似）
-Stage 2: 候補のみZIPダウンロードして正確な義務発生日を取得
-
-precise_threshold: Stage2に進む最低暦日遅延日数（default: 10日）
-"""
 stage1_candidates = []
 current = datetime.strptime(start_date, "%Y-%m-%d").date()
 end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -827,15 +729,13 @@ return final_alerts
 # ============================================================
 
 def run_demo():
-“””
-Olympic事例を含むデモデータで動作確認。
-“””
-print(”\n” + “=” * 60)
-print(”  TOB予兆検出システム — デモモード”)
-print(”  (Olympic事例を含む架空データで動作確認)”)
-print(”=” * 60)
 
 ```
+print("\n" + "=" * 60)
+print("  TOB予兆検出システム — デモモード")
+print("  (Olympic事例を含む架空データで動作確認)")
+print("=" * 60)
+
 demo_cases = [
     {
         # Olympic事例（実際のケース）
@@ -908,7 +808,6 @@ return results
 # ============================================================
 
 def print_results(alerts: list):
-“”“アラートをコンソールに整形出力”””
 
 ```
 print(f"\n{'=' * 60}")
@@ -947,7 +846,6 @@ for i, a in enumerate(top, 1):
 ```
 
 def save_results(alerts: list, prefix: str = “tob_alerts”):
-“”“JSON・CSVに保存”””
 
 ```
 # JSON
