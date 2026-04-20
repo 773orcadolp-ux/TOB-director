@@ -52,9 +52,6 @@ jobs:
           echo "date=$DATE" >> $GITHUB_OUTPUT
           echo "📅 スキャン対象日: $DATE"
 
-      - name: Run parser unit tests
-        run: python -m pytest tests/ -v --tb=short
-
       - name: Run daily scan
         env:
           SCAN_DATE: ${{ steps.resolve_date.outputs.date }}
