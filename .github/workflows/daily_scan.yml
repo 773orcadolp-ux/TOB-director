@@ -1,0 +1,88 @@
+name: TOB予兆 日次スキャン
+
+on:
+  schedule:
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      scan_date:
+        description: "スキャン日 (YYYY-MM-DD)。空欄なら当日"
+        required: false
+        default: ""
+      threshold:
+        description: "アラート出力の最低スコア (default: 4)"
+        required: false
+        default: "4"
+      sec_code:
+        description: "銘柄コードで絞り込み (例: 8289)。空欄なら全銘柄"
+        required: false
+        default: ""
+
+env:
+  TZ: Asia/Tokyo
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  scan:
+    name: EDINET スキャン
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve scan date
+        id: resolve_date
+        run: |
+          INPUT="${{ github.event.inputs.scan_date }}"
+          if [ -z "$INPUT" ]; then
+            DATE=$(TZ=Asia/Tokyo date +%Y-%m-%d)
+          else
+            DATE="$INPUT"
+          fi
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+          echo "📅 スキャン対象日: $DATE"
+
+      - name: Run parser unit tests
+        run: python -m pytest tests/ -v --tb=short
+
+      - name: Run daily scan
+        env:
+          SCAN_DATE: ${{ steps.resolve_date.outputs.date }}
+          THRESHOLD: ${{ github.event.inputs.threshold || '4' }}
+          SEC_CODE:  ${{ github.event.inputs.sec_code || '' }}
+        run: |
+          ARGS="--date $SCAN_DATE --threshold $THRESHOLD"
+          if [ -n "$SEC_CODE" ]; then
+            ARGS="$ARGS --code $SEC_CODE"
+          fi
+          python -m detector.tob_detector $ARGS \
+            --output results/tob_alerts_${SCAN_DATE}
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tob-alerts-${{ steps.resolve_date.outputs.date }}
+          path: results/
+          retention-days: 90
+
+      - name: Notify Slack on alerts
+        if: success()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SCAN_DATE: ${{ steps.resolve_date.outputs.date }}
+        run: |
+          python scripts/notify_slack.py \
+            --result results/tob_alerts_${SCAN_DATE}.json \
+            --date $SCAN_DATE
+        continue-on-error: true
