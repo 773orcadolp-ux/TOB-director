@@ -51,6 +51,10 @@ jobs:
           fi
           echo "date=$DATE" >> $GITHUB_OUTPUT
           echo "📅 スキャン対象日: $DATE"
+          
+      - name: Test EDINET connectivity
+        run: |
+          curl -v "https://disclosure.edinet-api.go.jp/api/v2/documents.json?date=2026-04-20&type=2&Subscription-Key=${{ secrets.EDINET_API_KEY }}" 2>&1 | head -30
 
       - name: Run daily scan
         env:
