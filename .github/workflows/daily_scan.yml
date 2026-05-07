@@ -98,5 +98,7 @@ jobs:
         run: |
           python scripts/notify_slack.py \
             --result results/tob_alerts_${SCAN_DATE}.json \
+            --earnings results/earnings_alerts_${SCAN_DATE}.json \
             --date $SCAN_DATE
         continue-on-error: true
+
