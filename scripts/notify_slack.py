@@ -9,28 +9,32 @@ def build_message(alerts, scan_date):
     if not alerts:
         return None
 
-    by_level = {'CRITICAL': [], 'HIGH': [], 'MEDIUM': []}
-    for a in alerts:
-        lv = a.get('risk_level', 'LOW')
-        if lv in by_level:
-            by_level[lv].append(a)
-
-    lines = [f'*TOB予兆スキャン結果 ({scan_date})*']
-    lines.append(f"検出: CRITICAL {len(by_level['CRITICAL'])} / HIGH {len(by_level['HIGH'])} / MEDIUM {len(by_level['MEDIUM'])}")
+    lines = [f'*TOB予兆スキャン ({scan_date})*']
+    lines.append(f'長期遅延（100営業日超）: {len(alerts)}件')
     lines.append('')
 
-    top = sorted(alerts, key=lambda x: -x.get('total_score', 0))[:10]
+    top = sorted(alerts, key=lambda x: -x.get('biz_days_late', 0))[:15]
     for i, a in enumerate(top, 1):
-        emoji = {'CRITICAL': ':red_circle:', 'HIGH': ':large_orange_circle:',
-                 'MEDIUM': ':large_yellow_circle:'}.get(a.get('risk_level'), ':white_circle:')
         target = a.get('target_name') or a.get('issuer_edinet_code', '?')
         sec = a.get('target_sec_code') or ''
         sec_str = f' ({sec})' if sec else ''
+
         ratio = a.get('holding_ratio')
         ratio_str = f"{ratio:.2f}%" if ratio is not None else '?'
+        prev = a.get('holding_ratio_prev')
+        prev_str = f' (前回{prev:.2f}%)' if prev is not None else ''
+
+        pbr = a.get('pbr')
+        pbr_str = f"PBR {pbr:.2f}" if pbr is not None else 'PBR ?'
+
+        div = a.get('dividend_yield')
+        div_str = f"配当{div*100:.2f}%" if div is not None else '配当 ?'
+
         purpose = (a.get('purpose') or '')[:40]
-        lines.append(f"{emoji} [{i}] *{target}*{sec_str} score:{a.get('total_score')}")
-        lines.append(f"    提出者: {a.get('filer_name','')} / 保有率: {ratio_str} / 遅延: {a.get('biz_days_late','?')}営業日")
+
+        lines.append(f":alarm_clock: *[{i}] {a.get('biz_days_late')}営業日遅延* {target}{sec_str}")
+        lines.append(f"    提出者: {a.get('filer_name','')}")
+        lines.append(f"    保有率: {ratio_str}{prev_str} / {pbr_str} / {div_str}")
         if purpose:
             lines.append(f"    目的: {purpose}")
         lines.append('')
@@ -50,7 +54,7 @@ def main():
         return
 
     if not os.path.exists(args.result):
-        print(f'No result file: {args.result} (likely 0 alerts)')
+        print(f'No result file: {args.result}')
         return
 
     with open(args.result, encoding='utf-8') as f:
