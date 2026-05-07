@@ -61,7 +61,7 @@ jobs:
 
       - name: Run daily scan
         env:
-　　　　　　 EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
           SCAN_DATE: ${{ steps.resolve_date.outputs.date }}
           THRESHOLD: ${{ github.event.inputs.threshold || '4' }}
           SEC_CODE:  ${{ github.event.inputs.sec_code || '' }}
