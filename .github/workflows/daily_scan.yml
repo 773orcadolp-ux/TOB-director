@@ -73,6 +73,15 @@ jobs:
           python -m detector.tob_detector $ARGS \
             --output results/tob_alerts_${SCAN_DATE}
 
+      - name: Run earnings delay scan
+        env:
+          EDINET_API_KEY: ${{ secrets.EDINET_API_KEY }}
+          SCAN_DATE: ${{ steps.resolve_date.outputs.date }}
+        run: |
+          python -m detector.earnings_delay --date $SCAN_DATE \
+            --output results/earnings_alerts_${SCAN_DATE}
+
+
       - name: Upload scan results
         if: always()
         uses: actions/upload-artifact@v4
