@@ -2,7 +2,10 @@ name: TOB予兆 日次スキャン
 
 on:
   schedule:
-    - cron: "0 11 * * 1-5"
+  - cron: "0 1 * * 1-5"
+  - cron: "0 3 * * 1-5"
+  - cron: "0 6 * * 1-5"
+  - cron: "0 10 * * 1-5"
   workflow_dispatch:
     inputs:
       scan_date:
