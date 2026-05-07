@@ -17,12 +17,7 @@ LARGE_HOLDING_CODES = {'350', '351', '360', '361'}
 TOB_CODES = {'240', '250', '270', '290', '300'}
 LEGAL_LIMIT_BIZ_DAYS = 5
 RATE_LIMIT_SLEEP = 1.0
-
-WAREKI_START = {
-    '\u4ee4\u548c': date(2019, 5, 1),
-    '\u5e73\u6210': date(1989, 1, 8),
-    '\u662d\u548c': date(1926, 12, 25),
-}
+TARGET_CACHE_FILE = 'target_cache.json'
 
 
 def parse_date_string(text):
@@ -74,12 +69,8 @@ def fetch_document_csv(doc_id):
 
 
 def parse_csv_zip(zip_bytes):
-    result = {
-        'obligation_date': None,
-        'holding_ratio': None,
-        'purpose': None,
-        'filer_business': None,
-    }
+    result = {'obligation_date': None, 'holding_ratio': None,
+              'purpose': None, 'filer_business': None}
     if not zip_bytes:
         return result
     try:
@@ -110,7 +101,35 @@ def parse_csv_zip(zip_bytes):
     return result
 
 
-def find_tob_announced(start_str, end_str):
+def load_target_cache():
+    if os.path.exists(TARGET_CACHE_FILE):
+        try:
+            with open(TARGET_CACHE_FILE, encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def save_target_cache(cache):
+    with open(TARGET_CACHE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+def update_cache_from_docs(cache, docs):
+    for d in docs:
+        code = d.get('edinetCode')
+        if code and code not in cache:
+            sec = d.get('secCode') or ''
+            if sec.endswith('0'):
+                sec = sec[:-1]
+            cache[code] = {
+                'name': d.get('filerName', ''),
+                'sec_code': sec[:4] if sec else '',
+            }
+
+
+def find_tob_announced(start_str, end_str, cache=None):
     tob_issuers = set()
     cur = date.fromisoformat(start_str)
     end = date.fromisoformat(end_str)
@@ -118,6 +137,8 @@ def find_tob_announced(start_str, end_str):
         if cur.weekday() < 5:
             docs = fetch_documents_by_date(cur.isoformat())
             time.sleep(RATE_LIMIT_SLEEP)
+            if cache is not None:
+                update_cache_from_docs(cache, docs)
             for d in docs:
                 if d.get('docTypeCode') in TOB_CODES:
                     target = d.get('subjectEdinetCode') or d.get('issuerEdinetCode')
@@ -148,11 +169,13 @@ def score_ratio(r):
 def score_purpose(p):
     if not p:
         return 0
-    excluded = ['\u516c\u958b\u8cb7\u4ed8', 'TOB', '\u682a\u5f0f\u4ea4\u63db', '\u5408\u4f75', '\u8cb7\u53ce']
+    excluded = ['\u516c\u958b\u8cb7\u4ed8', 'TOB', '\u682a\u5f0f\u4ea4\u63db',
+                '\u5408\u4f75', '\u8cb7\u53ce', '\u30b0\u30eb\u30fc\u30d7\u7d4c\u55b6']
     for kw in excluded:
         if kw in p:
             return 0
-    high = ['\u7d4c\u55b6\u53c2\u52a0', '\u91cd\u8981\u63d0\u6848', '\u7d4c\u55b6\u6a29', '\u652f\u914d\u6a29']
+    high = ['\u7d4c\u55b6\u53c2\u52a0', '\u91cd\u8981\u63d0\u6848',
+            '\u7d4c\u55b6\u6a29', '\u652f\u914d\u6a29']
     for kw in high:
         if kw in p:
             return 4
@@ -160,15 +183,21 @@ def score_purpose(p):
 
 
 def score_holder(name, biz):
-    text = (name or '') + (biz or '')
-    founding = ['\u4e0d\u52d5\u7523', '\u8cc7\u7523\u7ba1\u7406', '\u6709\u4fa1\u8a3c\u5238\u6295\u8cc7']
+    fund_kw = ['Fund', '\u30d5\u30a1\u30f3\u30c9', '\u30a2\u30bb\u30c3\u30c8',
+               '\u30ad\u30e3\u30d4\u30bf\u30eb', 'Capital', 'Partners', 'LLP']
+    text_full = (name or '') + (biz or '')
+    for kw in fund_kw:
+        if kw in text_full:
+            return 0
+    founding = ['\u4e0d\u52d5\u7523', '\u8cc7\u7523\u7ba1\u7406',
+                '\u6709\u4fa1\u8a3c\u5238\u6295\u8cc7']
     for kw in founding:
-        if kw in text:
+        if kw in text_full:
             return 3
     return 1
 
 
-def analyze(doc, csv_data):
+def analyze(doc, csv_data, cache):
     if doc.get('docTypeCode') not in LARGE_HOLDING_CODES:
         return None
     submit_str = doc.get('submitDateTime', '')
@@ -187,12 +216,17 @@ def analyze(doc, csv_data):
     total = delay_s + rs + ps + hs
     level = 'CRITICAL' if total >= 10 else 'HIGH' if total >= 7 else 'MEDIUM' if total >= 4 else 'LOW'
 
+    issuer_code = doc.get('issuerEdinetCode') or ''
+    target_info = cache.get(issuer_code, {})
+
     return {
         'doc_id': doc.get('docID'),
         'submit_date': submit_str[:10],
         'obligation_date': obligation.isoformat(),
         'filer_name': doc.get('filerName', ''),
-        'issuer_edinet_code': doc.get('issuerEdinetCode') or '',
+        'issuer_edinet_code': issuer_code,
+        'target_name': target_info.get('name', '?'),
+        'target_sec_code': target_info.get('sec_code', ''),
         'biz_days_late': biz_late,
         'holding_ratio': csv_data.get('holding_ratio'),
         'purpose': csv_data.get('purpose'),
@@ -202,9 +236,13 @@ def analyze(doc, csv_data):
     }
 
 
-def scan_date(target_date, threshold=4, tob_announced=None):
+def scan_date(target_date, threshold=4, tob_announced=None, cache=None):
+    if cache is None:
+        cache = {}
+
     print(f'scan: {target_date}')
     docs = fetch_documents_by_date(target_date)
+    update_cache_from_docs(cache, docs)
     print(f'  total: {len(docs)}')
     time.sleep(RATE_LIMIT_SLEEP)
     targets = [d for d in docs if d.get('docTypeCode') in LARGE_HOLDING_CODES]
@@ -213,17 +251,16 @@ def scan_date(target_date, threshold=4, tob_announced=None):
         before = len(targets)
         targets = [d for d in targets if (d.get('issuerEdinetCode') or '') not in tob_announced]
         print(f'  large holding: {before} (TOB excluded {before - len(targets)} -> {len(targets)})')
-    else:
-        print(f'  large holding: {len(targets)}')
 
     alerts = []
-    for i, doc in enumerate(targets, 1):
+    for doc in targets:
         csv_bytes = fetch_document_csv(doc['docID'])
         time.sleep(RATE_LIMIT_SLEEP)
         cd = parse_csv_zip(csv_bytes) if csv_bytes else {}
-        r = analyze(doc, cd)
+        r = analyze(doc, cd, cache)
         if r and r['total_score'] >= threshold:
-            print(f"  [{r['risk_level']}] {doc.get('filerName','')[:25]} score:{r['total_score']}")
+            tname = r['target_name'][:20] if r['target_name'] != '?' else r['issuer_edinet_code']
+            print(f"  [{r['risk_level']}] {tname} <- {doc.get('filerName','')[:20]} score:{r['total_score']}")
             alerts.append(r)
     return alerts
 
@@ -242,23 +279,29 @@ def main():
 
     target = args.date or date.today().isoformat()
 
-    print(f'Building TOB-announced cache (last {args.tob_cache_days} days)...')
+    cache = load_target_cache()
+    print(f'Target cache loaded: {len(cache)} companies')
+
+    print(f'Building TOB-announced list (last {args.tob_cache_days} days)...')
     end_d = date.fromisoformat(target)
     start_d = end_d - timedelta(days=args.tob_cache_days)
-    tob_announced = find_tob_announced(start_d.isoformat(), end_d.isoformat())
-    print(f'TOB-announced companies: {len(tob_announced)}')
+    tob_announced = find_tob_announced(start_d.isoformat(), end_d.isoformat(), cache)
+    print(f'TOB-announced: {len(tob_announced)} companies')
+    print(f'Target cache after build: {len(cache)} companies')
 
-    alerts = scan_date(target, args.threshold, tob_announced)
+    alerts = scan_date(target, args.threshold, tob_announced, cache)
+
+    save_target_cache(cache)
 
     print(f'\n=== detected: {len(alerts)} ===')
     for a in sorted(alerts, key=lambda x: -x['total_score'])[:10]:
-        print(f"[{a['risk_level']}] {a['filer_name']} score:{a['total_score']}")
+        tname = a['target_name'] if a['target_name'] != '?' else a['issuer_edinet_code']
+        print(f"[{a['risk_level']}] {tname} ({a['target_sec_code']}) <- {a['filer_name']} score:{a['total_score']}")
 
     if alerts:
         os.makedirs(os.path.dirname(args.output) or '.', exist_ok=True)
         with open(f'{args.output}.json', 'w', encoding='utf-8') as f:
             json.dump(alerts, f, ensure_ascii=False, indent=2, default=str)
-        print(f'\nSaved: {args.output}.json')
 
 
 if __name__ == '__main__':
