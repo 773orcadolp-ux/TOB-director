@@ -81,6 +81,13 @@ jobs:
           python -m detector.earnings_delay --date $SCAN_DATE \
             --output results/earnings_alerts_${SCAN_DATE}
 
+      - name: Run SPC monitor
+        env:
+          NTA_API_KEY: ${{ secrets.NTA_API_KEY }}
+        run: |
+          python -m detector.spc_monitor --days 1 \
+            --output results/spc_alerts_${{ steps.resolve_date.outputs.date }}
+
 
       - name: Upload scan results
         if: always()
@@ -99,6 +106,7 @@ jobs:
           python scripts/notify_slack.py \
             --result results/tob_alerts_${SCAN_DATE}.json \
             --earnings results/earnings_alerts_${SCAN_DATE}.json \
+            --spc results/spc_alerts_${SCAN_DATE}.json \
             --date $SCAN_DATE
         continue-on-error: true
 
