@@ -50,6 +50,21 @@ def build_earnings_section(alerts):
     return '\n'.join(lines)
 
 
+def build_spc_section(alerts):
+    if not alerts:
+        return None
+    lines = ['*【SPC設立検知】*']
+    lines.append(f'検出: {len(alerts)}件')
+    lines.append('')
+    for i, a in enumerate(alerts[:10], 1):
+        flag = ':red_circle:' if a.get('is_suspicious_name') else ':large_orange_circle:'
+        lines.append(f"{flag} *[{i}] [{a.get('category')}] {a.get('name')}*")
+        lines.append(f"    住所: {a.get('matched_org')} / 設立: {a.get('change_date')}")
+        lines.append(f"    法人番号: {a.get('corp_num')}")
+        lines.append('')
+    return '\n'.join(lines)
+
+
 def post_to_slack(webhook, text):
     payload = {'text': text}
     req = urllib.request.Request(
@@ -65,7 +80,7 @@ def post_to_slack(webhook, text):
 
 
 def load_json(path):
-    if not os.path.exists(path):
+    if not path or not os.path.exists(path):
         return []
     try:
         with open(path, encoding='utf-8') as f:
@@ -78,6 +93,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--result', help='大量保有JSONファイル')
     p.add_argument('--earnings', help='決算遅延JSONファイル')
+    p.add_argument('--spc', help='SPC検知JSONファイル')
     p.add_argument('--date', required=True)
     args = p.parse_args()
 
@@ -86,21 +102,22 @@ def main():
         print('SLACK_WEBHOOK not set', file=sys.stderr)
         return
 
-    holding_alerts = load_json(args.result) if args.result else []
-    earnings_alerts = load_json(args.earnings) if args.earnings else []
+    holding_alerts = load_json(args.result)
+    earnings_alerts = load_json(args.earnings)
+    spc_alerts = load_json(args.spc)
 
     sections = [f'*TOB予兆スキャン ({args.date})*', '']
     has_content = False
 
-    h = build_holding_section(holding_alerts)
-    if h:
-        sections.append(h)
-        has_content = True
-
-    e = build_earnings_section(earnings_alerts)
-    if e:
-        sections.append(e)
-        has_content = True
+    for builder, data in [
+        (build_holding_section, holding_alerts),
+        (build_earnings_section, earnings_alerts),
+        (build_spc_section, spc_alerts),
+    ]:
+        section = builder(data)
+        if section:
+            sections.append(section)
+            has_content = True
 
     if not has_content:
         print('No alerts to notify')
